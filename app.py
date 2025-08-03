@@ -97,6 +97,26 @@ def create_user():
             conn.close()
             app.logger.info("Conexión a la base de datos cerrada.")
 
+@app.route('/usuarios', methods=['GET'])
+def get_all_users():
+    """Obtiene una lista de todos los usuarios de la tabla userinfo."""
+    app.logger.info("Recibida petición GET para /usuarios (todos)")
+    conn = get_db_connection()
+    if not conn:
+        return jsonify({'error': 'No se pudo conectar a la base de datos'}), 500
+        
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT username, firstname, lastname, email, creationdate FROM userinfo")
+            users = cursor.fetchall()
+            return jsonify(users)
+    except pymysql.MySQLError as e:
+        app.logger.error(f"Error de base de datos al obtener todos los usuarios: {e}")
+        return jsonify({'error': f'Error de base de datos: {e}'}), 500
+    finally:
+        if conn:
+            conn.close()
+
 @app.route('/usuarios/<username>', methods=['GET'])
 def get_user(username):
     """Verifica un usuario y devuelve sus atributos."""
