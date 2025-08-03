@@ -1,4 +1,4 @@
-# app.py (Logging Robusto e Integración con daloRADIUS Corregida)
+# app.py (Logging Robusto e Integración Final con daloRADIUS en la tabla userinfo)
 
 import os
 import pymysql
@@ -40,9 +40,9 @@ def get_db_connection():
 @app.route('/usuarios', methods=['POST'])
 def create_user():
     """
-    Crea un nuevo usuario con sus atributos para FreeRADIUS.
+    Crea un nuevo usuario con sus atributos, asegurando la visibilidad en daloRADIUS.
     Requiere: username, password.
-    Opcional: simultaneous_use, session_timeout.
+    Opcional: firstname, lastname, email, simultaneous_use, session_timeout.
     """
     app.logger.info("Recibida petición POST en /usuarios")
     data = request.get_json()
@@ -50,10 +50,16 @@ def create_user():
         app.logger.warning("Petición POST inválida: faltan username o password.")
         return jsonify({'error': 'Se requieren nombre de usuario y contraseña'}), 400
 
+    # Datos para FreeRADIUS
     username = data['username']
     password = data['password']
     simultaneous_use = data.get('simultaneous_use')
     session_timeout = data.get('session_timeout')
+
+    # Datos opcionales para daloRADIUS (userinfo)
+    firstname = data.get('firstname', '')
+    lastname = data.get('lastname', '')
+    email = data.get('email', '')
 
     conn = get_db_connection()
     if not conn:
@@ -62,6 +68,10 @@ def create_user():
     try:
         with conn.cursor() as cursor:
             app.logger.info(f"Insertando usuario {username} en la base de datos.")
+            
+            # --- INSERCIÓN PARA DALORADIUS (en la tabla userinfo) ---
+            sql_user_dalo = "INSERT INTO `userinfo` (`username`, `firstname`, `lastname`, `email`, `creationdate`, `creationby`) VALUES (%s, %s, %s, %s, %s, %s)"
+            cursor.execute(sql_user_dalo, (username, firstname, lastname, email, datetime.now(), 'api'))
             
             # --- Inserciones para FreeRADIUS ---
             sql_pass = "INSERT INTO `radcheck` (`username`, `attribute`, `op`, `value`) VALUES (%s, 'Cleartext-Password', ':=', %s)"
@@ -116,7 +126,7 @@ def get_user(username):
 
 @app.route('/usuarios/<username>', methods=['DELETE'])
 def delete_user(username):
-    """Elimina un usuario de todas las tablas relevantes de FreeRADIUS."""
+    """Elimina un usuario de todas las tablas relevantes, incluyendo la de daloRADIUS."""
     app.logger.info(f"Recibida petición DELETE para /usuarios/{username}")
     conn = get_db_connection()
     if not conn:
@@ -124,7 +134,8 @@ def delete_user(username):
         
     try:
         with conn.cursor() as cursor:
-            # Eliminar de las tablas de FreeRADIUS
+            # Eliminar de las tablas de FreeRADIUS y daloRADIUS para una limpieza completa
+            cursor.execute("DELETE FROM userinfo WHERE username = %s", (username,))
             cursor.execute("DELETE FROM radcheck WHERE username = %s", (username,))
             cursor.execute("DELETE FROM radreply WHERE username = %s", (username,))
             cursor.execute("DELETE FROM radusergroup WHERE username = %s", (username,))
