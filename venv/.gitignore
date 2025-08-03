@@ -1,0 +1,9 @@
+ .gitignore
+
+    # Entorno Virtual
+    venv/
+    __pycache__/
+    *.pyc
+
+    # Archivos de sistema
+    .DS_Store
