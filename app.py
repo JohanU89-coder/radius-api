@@ -211,11 +211,64 @@ def delete_user(username):
         
         conn.commit()
         if cursor.rowcount > 0:
-            return jsonify({'success': f'Usuario {username} eliminado correctamente'})
+            return jsonify({'success': f'Usuario {username} eliminado permanentemente'})
         else:
             return jsonify({'error': 'Usuario no encontrado o ya eliminado'}), 404
     except pymysql.MySQLError as e:
         app.logger.error(f"Error de base de datos al eliminar usuario {username}: {e}")
+        conn.rollback()
+        return jsonify({'error': f'Error de base de datos: {e}'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+@app.route('/usuarios/<username>/desactivar', methods=['POST'])
+def deactivate_user(username):
+    """Desactiva una cuenta de usuario añadiendo Auth-Type := Reject."""
+    app.logger.info(f"Recibida petición para DESACTIVAR al usuario {username}")
+    conn = get_db_connection()
+    if not conn:
+        return jsonify({'error': 'No se pudo conectar a la base de datos'}), 500
+    
+    try:
+        with conn.cursor() as cursor:
+            # Primero, eliminar cualquier regla 'Auth-Type' existente para evitar duplicados
+            cursor.execute("DELETE FROM radcheck WHERE username = %s AND attribute = 'Auth-Type'", (username,))
+            
+            # Insertar la regla para rechazar la autenticación
+            sql = "INSERT INTO `radcheck` (`username`, `attribute`, `op`, `value`) VALUES (%s, 'Auth-Type', ':=', 'Reject')"
+            cursor.execute(sql, (username,))
+        
+        conn.commit()
+        app.logger.info(f"Usuario {username} desactivado exitosamente.")
+        return jsonify({'success': f'Usuario {username} desactivado correctamente'})
+    except pymysql.MySQLError as e:
+        app.logger.error(f"Error de base de datos al desactivar usuario {username}: {e}")
+        conn.rollback()
+        return jsonify({'error': f'Error de base de datos: {e}'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+@app.route('/usuarios/<username>/activar', methods=['POST'])
+def activate_user(username):
+    """Reactiva una cuenta de usuario eliminando la regla Auth-Type := Reject."""
+    app.logger.info(f"Recibida petición para ACTIVAR al usuario {username}")
+    conn = get_db_connection()
+    if not conn:
+        return jsonify({'error': 'No se pudo conectar a la base de datos'}), 500
+    
+    try:
+        with conn.cursor() as cursor:
+            # Simplemente eliminar la regla que rechaza la autenticación
+            sql = "DELETE FROM radcheck WHERE username = %s AND attribute = 'Auth-Type'"
+            cursor.execute(sql, (username,))
+        
+        conn.commit()
+        app.logger.info(f"Usuario {username} activado exitosamente.")
+        return jsonify({'success': f'Usuario {username} activado correctamente'})
+    except pymysql.MySQLError as e:
+        app.logger.error(f"Error de base de datos al activar usuario {username}: {e}")
         conn.rollback()
         return jsonify({'error': f'Error de base de datos: {e}'}), 500
     finally:
