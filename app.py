@@ -1,10 +1,11 @@
-# app.py (Logging Robusto e Integración Final con daloRADIUS en la tabla userinfo)
+# app.py (Logging Robusto, Integración con daloRADIUS y Clave de API)
 
 import os
 import pymysql
 import logging
 from flask import Flask, jsonify, request
 from datetime import datetime
+from functools import wraps
 
 # --- Configuración de Logging ---
 # Esto asegura que los logs se muestren en la consola de Azure
@@ -12,11 +13,31 @@ logging.basicConfig(level=logging.INFO)
 
 app = Flask(__name__)
 
-# --- Configuración de la Base de Datos ---
+# --- Configuración de la Base de Datos y Clave de API ---
 DB_HOST = os.environ.get('DB_HOST')
 DB_USER = os.environ.get('DB_USER')
 DB_PASSWORD = os.environ.get('DB_PASSWORD')
 DB_NAME = os.environ.get('DB_NAME')
+# Leemos la clave secreta de la API desde las variables de entorno
+API_KEY = os.environ.get('API_KEY')
+
+# --- Decorador para la autenticación con Clave de API ---
+def require_api_key(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not API_KEY:
+            # Si la clave no está configurada en el servidor, denegar todo.
+            app.logger.critical("¡ALERTA DE SEGURIDAD! La API_KEY no está configurada en el entorno.")
+            return jsonify({"error": "Error de configuración en el servidor"}), 500
+        
+        # Obtenemos la clave del encabezado 'X-API-Key' de la petición
+        provided_key = request.headers.get('X-API-Key')
+        if not provided_key or provided_key != API_KEY:
+            app.logger.warning(f"Acceso denegado. Se proporcionó una clave de API incorrecta o ninguna.")
+            return jsonify({"error": "No autorizado. Se requiere una clave de API válida."}), 401
+        
+        return f(*args, **kwargs)
+    return decorated_function
 
 def get_db_connection():
     """Crea una conexión a la base de datos."""
@@ -38,6 +59,7 @@ def get_db_connection():
 # --- Endpoints de la API ---
 
 @app.route('/usuarios', methods=['POST'])
+@require_api_key
 def create_user():
     """
     Crea un nuevo usuario con sus atributos, asegurando la visibilidad en daloRADIUS.
@@ -98,6 +120,7 @@ def create_user():
             app.logger.info("Conexión a la base de datos cerrada.")
 
 @app.route('/usuarios', methods=['GET'])
+@require_api_key
 def get_all_users():
     """Obtiene una lista de todos los usuarios de la tabla userinfo."""
     app.logger.info("Recibida petición GET para /usuarios (todos)")
@@ -118,6 +141,7 @@ def get_all_users():
             conn.close()
 
 @app.route('/usuarios/<username>', methods=['GET'])
+@require_api_key
 def get_user(username):
     """Verifica un usuario y devuelve sus atributos."""
     app.logger.info(f"Recibida petición GET para /usuarios/{username}")
@@ -145,6 +169,7 @@ def get_user(username):
             conn.close()
 
 @app.route('/usuarios/<username>', methods=['PATCH'])
+@require_api_key
 def update_user(username):
     """
     Actualiza los datos de un usuario existente.
@@ -193,6 +218,7 @@ def update_user(username):
             conn.close()
 
 @app.route('/usuarios/<username>', methods=['DELETE'])
+@require_api_key
 def delete_user(username):
     """Elimina un usuario de todas las tablas relevantes, incluyendo la de daloRADIUS."""
     app.logger.info(f"Recibida petición DELETE para /usuarios/{username}")
@@ -223,6 +249,7 @@ def delete_user(username):
             conn.close()
 
 @app.route('/usuarios/<username>/desactivar', methods=['POST'])
+@require_api_key
 def deactivate_user(username):
     """Desactiva una cuenta de usuario añadiendo Auth-Type := Reject."""
     app.logger.info(f"Recibida petición para DESACTIVAR al usuario {username}")
@@ -251,6 +278,7 @@ def deactivate_user(username):
             conn.close()
 
 @app.route('/usuarios/<username>/activar', methods=['POST'])
+@require_api_key
 def activate_user(username):
     """Reactiva una cuenta de usuario eliminando la regla Auth-Type := Reject."""
     app.logger.info(f"Recibida petición para ACTIVAR al usuario {username}")
