@@ -144,6 +144,54 @@ def get_user(username):
         if conn:
             conn.close()
 
+@app.route('/usuarios/<username>', methods=['PATCH'])
+def update_user(username):
+    """
+    Actualiza los datos de un usuario existente.
+    Permite cambiar la contraseña, datos de contacto y atributos de RADIUS.
+    """
+    app.logger.info(f"Recibida petición PATCH para /usuarios/{username}")
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No se proporcionaron datos para actualizar'}), 400
+
+    conn = get_db_connection()
+    if not conn:
+        return jsonify({'error': 'No se pudo conectar a la base de datos'}), 500
+
+    try:
+        with conn.cursor() as cursor:
+            # Actualizar datos en userinfo
+            if 'firstname' in data:
+                cursor.execute("UPDATE userinfo SET firstname = %s WHERE username = %s", (data['firstname'], username))
+            if 'lastname' in data:
+                cursor.execute("UPDATE userinfo SET lastname = %s WHERE username = %s", (data['lastname'], username))
+            if 'email' in data:
+                cursor.execute("UPDATE userinfo SET email = %s WHERE username = %s", (data['email'], username))
+
+            # Actualizar contraseña en radcheck
+            if 'password' in data:
+                cursor.execute("UPDATE radcheck SET value = %s WHERE username = %s AND attribute = 'Cleartext-Password'", (data['password'], username))
+            
+            # Actualizar otros atributos de radcheck
+            if 'simultaneous_use' in data:
+                cursor.execute("UPDATE radcheck SET value = %s WHERE username = %s AND attribute = 'Simultaneous-Use'", (str(data['simultaneous_use']), username))
+
+            # Actualizar atributos de radreply
+            if 'session_timeout' in data:
+                cursor.execute("UPDATE radreply SET value = %s WHERE username = %s AND attribute = 'Session-Timeout'", (str(data['session_timeout']), username))
+        
+        conn.commit()
+        app.logger.info(f"Usuario {username} actualizado exitosamente.")
+        return jsonify({'success': f'Usuario {username} actualizado correctamente'})
+    except pymysql.MySQLError as e:
+        app.logger.error(f"Error de base de datos al actualizar usuario {username}: {e}")
+        conn.rollback()
+        return jsonify({'error': f'Error de base de datos: {e}'}), 500
+    finally:
+        if conn:
+            conn.close()
+
 @app.route('/usuarios/<username>', methods=['DELETE'])
 def delete_user(username):
     """Elimina un usuario de todas las tablas relevantes, incluyendo la de daloRADIUS."""
