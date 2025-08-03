@@ -1,4 +1,4 @@
-# app.py (Logging Robusto e Integración con daloRADIUS)
+# app.py (Logging Robusto e Integración con daloRADIUS Corregida)
 
 import os
 import pymysql
@@ -40,9 +40,9 @@ def get_db_connection():
 @app.route('/usuarios', methods=['POST'])
 def create_user():
     """
-    Crea un nuevo usuario con sus atributos, asegurando la visibilidad en daloRADIUS.
+    Crea un nuevo usuario con sus atributos para FreeRADIUS.
     Requiere: username, password.
-    Opcional: simultaneous_use, session_timeout, company, owner.
+    Opcional: simultaneous_use, session_timeout.
     """
     app.logger.info("Recibida petición POST en /usuarios")
     data = request.get_json()
@@ -54,8 +54,6 @@ def create_user():
     password = data['password']
     simultaneous_use = data.get('simultaneous_use')
     session_timeout = data.get('session_timeout')
-    company = data.get('company', 'Default Company') # Opcional, con valor por defecto
-    owner = data.get('owner', 'api') # Opcional, para saber quién creó el usuario
 
     conn = get_db_connection()
     if not conn:
@@ -64,11 +62,6 @@ def create_user():
     try:
         with conn.cursor() as cursor:
             app.logger.info(f"Insertando usuario {username} en la base de datos.")
-            
-            # --- INSERCIÓN PARA DALORADIUS ---
-            # daloRADIUS usa la tabla 'users' para listar los usuarios en su interfaz.
-            sql_user_dalo = "INSERT INTO `users` (`username`, `company`, `owner`, `creationdate`, `creationby`) VALUES (%s, %s, %s, %s, %s)"
-            cursor.execute(sql_user_dalo, (username, company, owner, datetime.now(), 'api'))
             
             # --- Inserciones para FreeRADIUS ---
             sql_pass = "INSERT INTO `radcheck` (`username`, `attribute`, `op`, `value`) VALUES (%s, 'Cleartext-Password', ':=', %s)"
@@ -123,7 +116,7 @@ def get_user(username):
 
 @app.route('/usuarios/<username>', methods=['DELETE'])
 def delete_user(username):
-    """Elimina un usuario de todas las tablas relevantes, incluyendo la de daloRADIUS."""
+    """Elimina un usuario de todas las tablas relevantes de FreeRADIUS."""
     app.logger.info(f"Recibida petición DELETE para /usuarios/{username}")
     conn = get_db_connection()
     if not conn:
@@ -131,8 +124,7 @@ def delete_user(username):
         
     try:
         with conn.cursor() as cursor:
-            # Eliminar de las tablas de FreeRADIUS y daloRADIUS para una limpieza completa
-            cursor.execute("DELETE FROM users WHERE username = %s", (username,))
+            # Eliminar de las tablas de FreeRADIUS
             cursor.execute("DELETE FROM radcheck WHERE username = %s", (username,))
             cursor.execute("DELETE FROM radreply WHERE username = %s", (username,))
             cursor.execute("DELETE FROM radusergroup WHERE username = %s", (username,))
